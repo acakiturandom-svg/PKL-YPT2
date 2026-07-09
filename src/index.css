@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  
+  --color-navy: #1e3a5f;
+  --color-gold: #f5a623;
+  --color-sleek-bg: #f3f4f6;
+  --color-sleek-border: #f1f5f9;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #cbd5e1; /* Outside frame color matched from design */
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+}
+
+.sleek-card {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.sleek-banner {
+  background: #f5a623;
+  color: #451a03;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+

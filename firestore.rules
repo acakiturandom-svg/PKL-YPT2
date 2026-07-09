@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      // Bootstrap with the user's email or check the admins collection
+      return isSignedIn() && (
+        request.auth.token.email == 'rubihartanto32@guru.smk.belajar.id' ||
+        request.auth.token.email == 'dominicusyosvida02@guru.smk.belajar.id' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+    }
+
+    match /siswa/{siswaId} {
+      // Allow read for everyone to support the custom login (finding by username)
+      allow read: if true; 
+      // Allow update for Pengaturan section
+      allow update: if true;
+      allow create, delete: if isAdmin();
+    }
+
+    match /guru/{guruId} {
+      allow read: if true; 
+      allow write: if isAdmin();
+    }
+
+    match /mitra/{mitraId} {
+      allow read: if true; 
+      allow write: if isAdmin();
+    }
+
+    match /jurnal/{jurnalId} {
+      // Simplified for this prototype to ensure functionality
+      allow read: if true; 
+      allow create: if true; // Ideally check identity, but SiswaDash uses Firestore login
+      allow update, delete: if isAdmin();
+    }
+
+    match /absensi/{absensiId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+  }
+}

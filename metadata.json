@@ -1,0 +1,12 @@
+{
+  "name": "SiPKL — Sistem Informasi PKL SMK YPT 2 Purbalingga",
+  "description": "Sistem monitoring Praktik Kerja Lapangan (PKL) mobile-first untuk SMK YPT 2 Purbalingga.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

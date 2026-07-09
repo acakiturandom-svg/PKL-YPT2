@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "siswa": {
+      "title": "Siswa",
+      "description": "Data siswa peserta PKL",
+      "type": "object",
+      "properties": {
+        "nis": { "type": "string" },
+        "nama": { "type": "string" },
+        "kelas": { "type": "string" },
+        "jurusan": { "type": "string" },
+        "noHp": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "guruId": { "type": "string" },
+        "mitraId": { "type": "string" },
+        "tanggalMulai": { "type": "string" },
+        "tanggalSelesai": { "type": "string" },
+        "role": { "type": "string", "enum": ["siswa"] }
+      },
+      "required": ["nis", "nama", "username", "password", "role"]
+    },
+    "guru": {
+      "title": "Guru Pembimbing",
+      "description": "Data guru pembimbing PKL",
+      "type": "object",
+      "properties": {
+        "idGuru": { "type": "string" },
+        "nama": { "type": "string" },
+        "noHp": { "type": "string" },
+        "mapel": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["guru"] }
+      },
+      "required": ["idGuru", "nama", "username", "password", "role"]
+    },
+    "mitra": {
+      "title": "Mitra Industri",
+      "description": "Data mitra industri tempat PKL",
+      "type": "object",
+      "properties": {
+        "kodeMitra": { "type": "string" },
+        "namaMitra": { "type": "string" },
+        "kepalaMitra": { "type": "string", "description": "Nama Kepala Bengkel atau Pembimbing Lapangan" },
+        "alamat": { "type": "string" },
+        "bidangUsaha": { "type": "string" },
+        "kontakPerson": { "type": "string" },
+        "noHp": { "type": "string" },
+        "koordinatGPS": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "radiusAbsensi": { "type": "number" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["mitra"] }
+      },
+      "required": ["kodeMitra", "namaMitra", "username", "password", "role"]
+    },
+    "jurnal": {
+      "title": "Jurnal Harian",
+      "description": "Catatan kegiatan harian siswa",
+      "type": "object",
+      "properties": {
+        "siswaId": { "type": "string" },
+        "mitraId": { "type": "string" },
+        "guruId": { "type": "string" },
+        "tanggal": { "type": "string", "format": "date" },
+        "kegiatan": { "type": "string" },
+        "tipeHari": { "type": "string", "enum": ["masuk", "libur"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["siswaId", "tanggal", "kegiatan", "tipeHari"]
+    },
+    "absensi": {
+      "title": "Absensi",
+      "description": "Data kehadiran harian siswa",
+      "type": "object",
+      "properties": {
+        "siswaId": { "type": "string" },
+        "mitraId": { "type": "string" },
+        "tanggal": { "type": "string", "format": "date" },
+        "tipe": { "type": "string", "enum": ["hadir", "libur", "tidak_absen"] },
+        "jamCheckin": { "type": "string" },
+        "koordinatCheckin": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "jarakCheckin": { "type": "number" },
+        "alasanLibur": { "type": "string" },
+        "keteranganLibur": { "type": "string" }
+      },
+      "required": ["siswaId", "tanggal", "tipe"]
+    }
+  },
+  "firestore": {
+    "/siswa/{siswaId}": {
+      "schema": "siswa",
+      "description": "Dokumen data siswa"
+    },
+    "/guru/{guruId}": {
+      "schema": "guru",
+      "description": "Dokumen data guru"
+    },
+    "/mitra/{mitraId}": {
+      "schema": "mitra",
+      "description": "Dokumen data mitra"
+    },
+    "/jurnal/{jurnalId}": {
+      "schema": "jurnal",
+      "description": "Dokumen jurnal harian"
+    },
+    "/absensi/{absensiId}": {
+      "schema": "absensi",
+      "description": "Dokumen absensi harian"
+    }
+  }
+}
