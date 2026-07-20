@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import { db, getDocs } from '../../lib/firebase';
 import { useAuth } from '../../lib/auth';
 import { Siswa, Jurnal, Mitra, Absensi } from '../../types';
 import { Users, BookOpen, ClipboardCheck, Loader2, Building2, User, Phone } from 'lucide-react';

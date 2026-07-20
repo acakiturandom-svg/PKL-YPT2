@@ -1,10 +1,11 @@
 
 import React from 'react';
-import { Home, Users, UserCheck, Building2, BookOpen, ClipboardCheck, User, LogOut, MoreHorizontal } from 'lucide-react';
+import { Home, Users, UserCheck, Building2, BookOpen, ClipboardCheck, User, LogOut, MoreHorizontal, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
+import { subscribeToQuotaStatus } from '../lib/firebase';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,6 +15,13 @@ interface LayoutProps {
 
 export default function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
   const { role, logout, profile } = useAuth();
+  const [quotaExceeded, setQuotaExceeded] = React.useState(false);
+
+  React.useEffect(() => {
+    return subscribeToQuotaStatus((exceeded) => {
+      setQuotaExceeded(exceeded);
+    });
+  }, []);
 
   const getNavItems = () => {
     switch (role) {
@@ -56,8 +64,9 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
   const navItems = getNavItems();
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
-      {/* Sidebar Desktop */}
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="flex-1 flex flex-col md:flex-row">
+        {/* Sidebar Desktop */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col sticky top-0 h-screen z-50">
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
@@ -169,6 +178,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
           );
         })}
       </nav>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, addDoc, doc, updateDoc, deleteDoc, where, orderBy, getDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, query, doc, where, orderBy } from 'firebase/firestore';
+import { db, getDocs, getDoc, addDoc, updateDoc, deleteDoc } from '../../lib/firebase';
 import { Siswa, Guru, Mitra, Jurnal, Absensi } from '../../types';
 import { hashPassword, cn, extractCoordinates } from '../../lib/utils';
 import { Users, UserCheck, Building2, Plus, Search, Trash2, Edit2, RotateCcw, Loader2, Filter, Download, Upload, AlertCircle, User, FileSpreadsheet, QrCode as QrIcon, MapPin } from 'lucide-react';

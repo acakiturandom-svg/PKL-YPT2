@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, orderBy, limit, updateDoc, onSnapshot, writeBatch } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, query, where, serverTimestamp, doc, orderBy, limit } from 'firebase/firestore';
+import { db, getDocs, getDoc, onSnapshot, addDoc, updateDoc, writeBatch } from '../../lib/firebase';
 import { useAuth, handleFirestoreError, OperationType } from '../../lib/auth';
 import { Siswa, Jurnal, Absensi, Mitra } from '../../types';
 // ...

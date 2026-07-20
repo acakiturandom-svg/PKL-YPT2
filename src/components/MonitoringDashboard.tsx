@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { collection } from 'firebase/firestore';
+import { db, getDocs, subscribeToQuotaStatus } from '../lib/firebase';
 import { Siswa, Mitra, Guru, Absensi, Jurnal } from '../types';
 import { 
   Users, 
@@ -18,7 +18,8 @@ import {
   FileText,
   Search,
   ExternalLink,
-  Info
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { 
@@ -47,7 +48,14 @@ export default function MonitoringDashboard() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const today = format(new Date(), 'yyyy-MM-dd');
+
+  useEffect(() => {
+    return subscribeToQuotaStatus((exceeded) => {
+      setQuotaExceeded(exceeded);
+    });
+  }, []);
 
   useEffect(() => {
     async function fetchAllData() {
