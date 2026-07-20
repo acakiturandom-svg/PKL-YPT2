@@ -37,19 +37,36 @@ export default function GuruDash({ activeTab }: { activeTab: string }) {
       setSiswaList(sData);
 
       if (sData.length > 0) {
-        const [jSnap, aSnap] = await Promise.all([
-          getDocs(collection(db, 'jurnal')),
-          getDocs(collection(db, 'absensi'))
+        const studentIds = sData.map(s => s.id);
+        
+        let supervisedJurnals: Jurnal[] = [];
+        let supervisedAbsensi: any[] = [];
+        
+        // Chunk studentIds into arrays of max 30 to stay within Firestore 'in' query limit
+        const chunks: string[][] = [];
+        for (let i = 0; i < studentIds.length; i += 30) {
+          chunks.push(studentIds.slice(i, i + 30));
+        }
+        
+        const jurnalPromises = chunks.map(chunk => 
+          getDocs(query(collection(db, 'jurnal'), where('siswaId', 'in', chunk)))
+        );
+        const absensiPromises = chunks.map(chunk => 
+          getDocs(query(collection(db, 'absensi'), where('siswaId', 'in', chunk)))
+        );
+        
+        const [jSnaps, aSnaps] = await Promise.all([
+          Promise.all(jurnalPromises),
+          Promise.all(absensiPromises)
         ]);
+        
+        const jDocs = jSnaps.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as Jurnal)));
+        const aDocs = aSnaps.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+        
+        supervisedJurnals = jDocs.sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+        supervisedAbsensi = aDocs;
 
-        const allJData = jSnap.docs.map(d => ({ id: d.id, ...d.data() } as Jurnal));
-        const supervisedJurnals = allJData
-          .filter(j => sData.some(s => s.id === j.siswaId))
-          .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
         setJurnals(supervisedJurnals);
-
-        const allAData = aSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        const supervisedAbsensi = allAData.filter(a => sData.some(s => s.id === a.siswaId));
         setAllAbsensi(supervisedAbsensi);
       } else {
         setJurnals([]);
