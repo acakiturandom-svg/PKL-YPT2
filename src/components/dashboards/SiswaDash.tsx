@@ -549,6 +549,57 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
   const [keterangan, setKeterangan] = useState('');
   const today = format(new Date(), 'yyyy-MM-dd');
 
+  // Sesi Absensi berdasarkan Jurusan (TKJ, TSM, TAV = Pagi; TKR, DKV = Sore)
+  const getSessionStatus = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeVal = currentHour * 60 + currentMinute; // minutes since midnight
+    
+    const morningStart = 7 * 60;       // 07:00
+    const morningEnd = 13 * 60;         // 13:00
+    const afternoonStart = 14 * 60 + 30; // 14:30
+    const afternoonEnd = 17 * 60;       // 17:00
+
+    const isMorningTime = currentTimeVal >= morningStart && currentTimeVal <= morningEnd;
+    const isAfternoonTime = currentTimeVal >= afternoonStart && currentTimeVal <= afternoonEnd;
+
+    const jur = (siswa.jurusan || '').trim().toUpperCase();
+    const isMorningDept = ['TKJ', 'TSM', 'TAV'].includes(jur);
+    const isAfternoonDept = ['TKR', 'TKRO', 'DKV'].includes(jur);
+
+    if (isMorningDept) {
+      return {
+        allowed: isMorningTime,
+        session: 'Pagi (07:00 - 13:00)',
+        currentTimeStr: `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`,
+        msg: `Jurusan Anda (${jur}) dijadwalkan absensi pada Sesi Pagi (07:00 - 13:00).`,
+        expectedSlot: '07:00 - 13:00'
+      };
+    }
+
+    if (isAfternoonDept) {
+      return {
+        allowed: isAfternoonTime,
+        session: 'Sore (14:30 - 17:00)',
+        currentTimeStr: `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`,
+        msg: `Jurusan Anda (${jur}) dijadwalkan absensi pada Sesi Sore (14:30 - 17:00).`,
+        expectedSlot: '14:30 - 17:00'
+      };
+    }
+
+    // Fallback for other departments
+    return {
+      allowed: isMorningTime || isAfternoonTime,
+      session: 'Pagi (07:00-13:00) atau Sore (14:30-17:00)',
+      currentTimeStr: `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`,
+      msg: 'Silakan melakukan absensi pada Sesi Pagi (07:00 - 13:00) atau Sesi Sore (14:30 - 17:00).',
+      expectedSlot: 'Pagi (07:00-13:00) atau Sore (14:30-17:00)'
+    };
+  };
+
+  const sessionStatus = getSessionStatus();
+
   // GPS tracking
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [distanceToBengkel, setDistanceToBengkel] = useState<number | null>(null);
@@ -615,6 +666,11 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
   const isWithinRadius = distanceToBengkel !== null && distanceToBengkel <= 100;
 
   const handleHadir = () => {
+    const session = getSessionStatus();
+    if (!session.allowed) {
+      return alert(`Waktu Presensi Ditolak!\n\n${session.msg}\nJam saat ini: ${session.currentTimeStr}`);
+    }
+
     if (!mitra && !siswa.namaBengkel) return alert('Data penempatan mitra belum ditentukan');
     
     if (!hasTargetCoords) {
@@ -748,6 +804,11 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
   }, [showScanner, mitra, siswa, userCoords]);
 
   const handleLibur = async () => {
+    const session = getSessionStatus();
+    if (!session.allowed) {
+      return alert(`Pengisian Status Ditolak!\n\n${session.msg}\nJam saat ini: ${session.currentTimeStr}`);
+    }
+
     if (!alasanLibur) return alert('Pilih alasan');
     if ((alasanLibur === 'Izin' || alasanLibur === 'Sakit') && !keterangan.trim()) {
       return alert('Harap isi keterangan tambahan untuk status ' + alasanLibur);
@@ -808,6 +869,22 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Warning Sesi Presensi */}
+            {!sessionStatus.allowed && (
+              <div className="bg-amber-50 border border-amber-200/70 p-5 rounded-xl flex items-start gap-3.5 text-left animate-in fade-in duration-300">
+                <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                <div className="space-y-1">
+                  <p className="text-[11px] font-black text-amber-900 uppercase tracking-wider">Sesi Absensi Belum Aktif</p>
+                  <p className="text-xs text-amber-800 font-semibold leading-relaxed">
+                    {sessionStatus.msg}
+                  </p>
+                  <p className="text-[10px] text-amber-600 font-bold uppercase mt-1">
+                    Jam Sekarang: <span className="bg-amber-100/80 px-2 py-0.5 rounded font-mono text-[11px] text-amber-700">{sessionStatus.currentTimeStr}</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Live GPS Verification Panel */}
             <div className="bg-slate-50 border border-slate-250/60 p-5 rounded-xl text-left space-y-3.5 transition-all">
               <div className="flex items-center justify-between">
@@ -817,7 +894,7 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
                 </span>
                 <button
                   onClick={getSiswaLocation}
-                  disabled={isRetrievingLocation}
+                  disabled={isRetrievingLocation || !sessionStatus.allowed}
                   className="text-[10px] bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 font-bold px-2 py-1 rounded flex items-center gap-1 transition-all disabled:opacity-50"
                 >
                   <RotateCcw size={10} className={cn(isRetrievingLocation && "animate-spin")} />
@@ -834,6 +911,11 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
                       Titik koordinat GPS workshop/bengkel belum didaftarkan di sistem oleh Admin. Hubungi pembimbing agar didaftarkan.
                     </p>
                   </div>
+                </div>
+              ) : !sessionStatus.allowed ? (
+                <div className="bg-slate-100/80 border border-slate-200/60 p-4 rounded-lg flex items-center gap-2.5 text-slate-500 font-semibold text-xs">
+                  <Clock size={16} />
+                  <span>Radius GPS dikunci di luar jam sesi absensi Anda.</span>
                 </div>
               ) : isRetrievingLocation ? (
                 <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-lg flex items-center justify-center gap-3">
@@ -887,21 +969,24 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
             <div className="space-y-4">
               <button
                 onClick={handleHadir}
-                disabled={isSubmitting || !isWithinRadius}
+                disabled={isSubmitting || !isWithinRadius || !sessionStatus.allowed}
                 className={cn(
                   "w-full font-bold py-4 rounded-lg shadow-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50 relative overflow-hidden group text-white",
-                  isWithinRadius ? "bg-blue-600 hover:bg-blue-700 shadow-blue-100" : "bg-slate-300 shadow-none cursor-not-allowed"
+                  isWithinRadius && sessionStatus.allowed ? "bg-blue-600 hover:bg-blue-700 shadow-blue-100" : "bg-slate-300 shadow-none cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : <QrIcon size={24} />}
                 {isSubmitting ? 'Memproses...' : 'Scan QR Code Presensi'}
-                {!isSubmitting && isWithinRadius && <div className="absolute inset-0 bg-white/20 animate-pulse opacity-0 group-hover:opacity-100 transition-opacity" />}
+                {!isSubmitting && isWithinRadius && sessionStatus.allowed && <div className="absolute inset-0 bg-white/20 animate-pulse opacity-0 group-hover:opacity-100 transition-opacity" />}
               </button>
               
               <button
                 onClick={() => setShowLiburMenu(true)}
-                disabled={isSubmitting}
-                className="w-full bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-bold py-4 rounded-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                disabled={isSubmitting || !sessionStatus.allowed}
+                className={cn(
+                  "w-full border font-bold py-4 rounded-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50",
+                  sessionStatus.allowed ? "bg-white border-slate-300 text-slate-600 hover:bg-slate-50" : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
+                )}
               >
                 <XCircle size={24} />
                 Status Libur / Izin
