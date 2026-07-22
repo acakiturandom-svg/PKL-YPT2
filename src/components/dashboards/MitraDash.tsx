@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { db, getDocs } from '../../lib/firebase';
 import { useAuth } from '../../lib/auth';
 import { Siswa, Jurnal, Mitra, Absensi } from '../../types';
@@ -24,11 +24,11 @@ export default function MitraDash({ activeTab }: { activeTab: string }) {
       setSiswaList(sData);
 
       if (sData.length > 0) {
-        const jQ = query(collection(db, 'jurnal'), where('mitraId', '==', mitra.id), orderBy('tanggal', 'desc'));
+        const jQ = query(collection(db, 'jurnal'), where('mitraId', '==', mitra.id), orderBy('tanggal', 'desc'), limit(50));
         const jSnap = await getDocs(jQ);
         setJurnals(jSnap.docs.map(d => ({ id: d.id, ...d.data() } as Jurnal)));
 
-        const aQ = query(collection(db, 'absensi'), where('mitraId', '==', mitra.id), orderBy('tanggal', 'desc'));
+        const aQ = query(collection(db, 'absensi'), where('mitraId', '==', mitra.id), orderBy('tanggal', 'desc'), limit(50));
         const aSnap = await getDocs(aQ);
         setAbsensi(aSnap.docs.map(d => ({ id: d.id, ...d.data() } as Absensi)));
       }

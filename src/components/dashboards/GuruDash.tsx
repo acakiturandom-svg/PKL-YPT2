@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { db, getDocs, addDoc } from '../../lib/firebase';
 import { useAuth } from '../../lib/auth';
 import { Siswa, Jurnal, Guru, Mitra } from '../../types';
@@ -22,14 +22,6 @@ export default function GuruDash({ activeTab }: { activeTab: string }) {
   const today = format(new Date(), 'yyyy-MM-dd');
 
   useEffect(() => {
-    async function fetchMitras() {
-      const snap = await getDocs(collection(db, 'mitra'));
-      setMitras(snap.docs.map(d => ({ id: d.id, ...d.data() } as Mitra)));
-    }
-    fetchMitras();
-  }, []);
-
-  useEffect(() => {
     async function fetchData() {
       const sQ = query(collection(db, 'siswa'), where('guruId', '==', guru.id));
       const sSnap = await getDocs(sQ);
@@ -39,20 +31,36 @@ export default function GuruDash({ activeTab }: { activeTab: string }) {
       if (sData.length > 0) {
         const studentIds = sData.map(s => s.id);
         
+        // 1. Specific fetch only assigned Mitras to minimize Reads
+        const uniqueMitraIds = Array.from(new Set(sData.map(s => s.mitraId).filter(id => id && id.trim() !== '')));
+        let mList: Mitra[] = [];
+        if (uniqueMitraIds.length > 0) {
+          const mChunks: string[][] = [];
+          for (let i = 0; i < uniqueMitraIds.length; i += 30) {
+            mChunks.push(uniqueMitraIds.slice(i, i + 30));
+          }
+          const mPromises = mChunks.map(chunk =>
+            getDocs(query(collection(db, 'mitra'), where('__name__', 'in', chunk)))
+          );
+          const mSnaps = await Promise.all(mPromises);
+          mList = mSnaps.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as Mitra)));
+        }
+        setMitras(mList);
+
+        // 2. Fetch supervised Jurnals & Absensi in chunks with safety limits
         let supervisedJurnals: Jurnal[] = [];
         let supervisedAbsensi: any[] = [];
         
-        // Chunk studentIds into arrays of max 30 to stay within Firestore 'in' query limit
         const chunks: string[][] = [];
         for (let i = 0; i < studentIds.length; i += 30) {
           chunks.push(studentIds.slice(i, i + 30));
         }
         
         const jurnalPromises = chunks.map(chunk => 
-          getDocs(query(collection(db, 'jurnal'), where('siswaId', 'in', chunk)))
+          getDocs(query(collection(db, 'jurnal'), where('siswaId', 'in', chunk), orderBy('tanggal', 'desc'), limit(150)))
         );
         const absensiPromises = chunks.map(chunk => 
-          getDocs(query(collection(db, 'absensi'), where('siswaId', 'in', chunk)))
+          getDocs(query(collection(db, 'absensi'), where('siswaId', 'in', chunk), orderBy('tanggal', 'desc'), limit(150)))
         );
         
         const [jSnaps, aSnaps] = await Promise.all([
@@ -69,6 +77,7 @@ export default function GuruDash({ activeTab }: { activeTab: string }) {
         setJurnals(supervisedJurnals);
         setAllAbsensi(supervisedAbsensi);
       } else {
+        setMitras([]);
         setJurnals([]);
         setAllAbsensi([]);
       }

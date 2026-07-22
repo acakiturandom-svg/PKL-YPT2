@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection } from 'firebase/firestore';
+import { collection, query, limit } from 'firebase/firestore';
 import { db, getDocs, subscribeToQuotaStatus } from '../lib/firebase';
 import { Siswa, Mitra, Guru, Absensi, Jurnal } from '../types';
 import { 
@@ -61,11 +61,11 @@ export default function MonitoringDashboard() {
     async function fetchAllData() {
       try {
         const [sSnap, mSnap, gSnap, aSnap, jSnap] = await Promise.all([
-          getDocs(collection(db, 'siswa')),
-          getDocs(collection(db, 'mitra')),
-          getDocs(collection(db, 'guru')),
-          getDocs(collection(db, 'absensi')),
-          getDocs(collection(db, 'jurnal'))
+          getDocs(query(collection(db, 'siswa'), limit(200))),
+          getDocs(query(collection(db, 'mitra'), limit(200))),
+          getDocs(query(collection(db, 'guru'), limit(200))),
+          getDocs(query(collection(db, 'absensi'), limit(200))),
+          getDocs(query(collection(db, 'jurnal'), limit(200)))
         ]);
 
         setData({

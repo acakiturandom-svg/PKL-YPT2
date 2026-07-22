@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, doc, where, orderBy } from 'firebase/firestore';
+import { collection, query, doc, where, orderBy, limit, getCountFromServer } from 'firebase/firestore';
 import { db, getDocs, getDoc, addDoc, updateDoc, deleteDoc } from '../../lib/firebase';
 import { Siswa, Guru, Mitra, Jurnal, Absensi } from '../../types';
 import { hashPassword, cn, extractCoordinates } from '../../lib/utils';
@@ -28,51 +28,86 @@ export default function AdminDash({ activeTab }: { activeTab: string }) {
   useEffect(() => {
     async function fetchAll() {
       setIsLoading(true);
-      // Fetch Masters always for lookup
-      const mSnap = await getDocs(collection(db, 'mitra'));
-      const mList = mSnap.docs.map(d => ({ id: d.id, ...d.data() } as Mitra));
-      setMitras(mList);
-      
-      const gSnap = await getDocs(collection(db, 'guru'));
-      const gList = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as Guru));
-      setGurus(gList);
+      try {
+        // 1. Get stats counts via server-side getCountFromServer (practically 0 reads!)
+        let mCount = 0;
+        let gCount = 0;
+        let sCount = 0;
+        try {
+          const mColl = collection(db, 'mitra');
+          const gColl = collection(db, 'guru');
+          const sColl = collection(db, 'siswa');
+          const [mCountSnap, gCountSnap, sCountSnap] = await Promise.all([
+            getCountFromServer(mColl),
+            getCountFromServer(gColl),
+            getCountFromServer(sColl)
+          ]);
+          mCount = mCountSnap.data().count;
+          gCount = gCountSnap.data().count;
+          sCount = sCountSnap.data().count;
+        } catch (countErr) {
+          console.warn("Failed to retrieve server counts:", countErr);
+        }
 
-      const sSnap = await getDocs(collection(db, 'siswa'));
-      const sList = sSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-      setStats({
-        siswa: sSnap.size,
-        guru: gSnap.size,
-        mitra: mSnap.size,
-        absenToday: 0
-      });
-
-      if (activeTab === 'beranda') {
-        const now = new Date();
-        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-        const filteredRecent = sList.filter((s: any) => {
-          if (!s.placementEditedAt) return false;
-          try {
-            const editTime = new Date(s.placementEditedAt);
-            return editTime >= oneDayAgo && editTime <= now;
-          } catch (e) {
-            return false;
-          }
+        setStats({
+          siswa: sCount,
+          guru: gCount,
+          mitra: mCount,
+          absenToday: 0
         });
 
-        setRecentUpdates(filteredRecent);
-      } else if (['siswa', 'guru', 'mitra', 'monitoring'].includes(activeTab)) {
-        if (activeTab === 'siswa') {
-          setData(sList);
-        } else {
-          const col = activeTab === 'monitoring' ? 'jurnal' : activeTab;
-          const q = activeTab === 'monitoring' ? query(collection(db, col), orderBy('tanggal', 'desc')) : collection(db, col);
-          const snap = await getDocs(q);
-          setData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // 2. Fetch Masters for drop-downs lazily ONLY ONCE per session to avoid redundant reads
+        let mList = mitras;
+        if (mitras.length === 0) {
+          const mSnap = await getDocs(query(collection(db, 'mitra'), limit(150)));
+          mList = mSnap.docs.map(d => ({ id: d.id, ...d.data() } as Mitra));
+          setMitras(mList);
         }
+
+        let gList = gurus;
+        if (gurus.length === 0) {
+          const gSnap = await getDocs(query(collection(db, 'guru'), limit(150)));
+          gList = gSnap.docs.map(d => ({ id: d.id, ...d.data() } as Guru));
+          setGurus(gList);
+        }
+
+        // 3. Fetch specific activeTab lists with safe limit(150)
+        if (activeTab === 'beranda') {
+          const now = new Date();
+          const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+          const sSnap = await getDocs(query(collection(db, 'siswa'), limit(100)));
+          const sList = sSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+          const filteredRecent = sList.filter((s: any) => {
+            if (!s.placementEditedAt) return false;
+            try {
+              const editTime = new Date(s.placementEditedAt);
+              return editTime >= oneDayAgo && editTime <= now;
+            } catch (e) {
+              return false;
+            }
+          });
+
+          setRecentUpdates(filteredRecent);
+        } else if (['siswa', 'guru', 'mitra', 'monitoring'].includes(activeTab)) {
+          if (activeTab === 'siswa') {
+            const sSnap = await getDocs(query(collection(db, 'siswa'), limit(150)));
+            setData(sSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          } else {
+            const col = activeTab === 'monitoring' ? 'jurnal' : activeTab;
+            const q = activeTab === 'monitoring' 
+              ? query(collection(db, col), orderBy('tanggal', 'desc'), limit(150)) 
+              : query(collection(db, col), limit(150));
+            const snap = await getDocs(q);
+            setData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          }
+        }
+      } catch (err) {
+        console.error("Error in fetchAll AdminDash:", err);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     }
     fetchAll();
   }, [activeTab]);
@@ -1503,11 +1538,11 @@ function MonitoringSection({ data: initialJurnals }: any) {
     setIsLoading(true);
     try {
       const [sSnap, gSnap, mSnap, aSnap, jSnap] = await Promise.all([
-        getDocs(collection(db, 'siswa')),
-        getDocs(collection(db, 'guru')),
-        getDocs(collection(db, 'mitra')),
-        getDocs(collection(db, 'absensi')),
-        getDocs(query(collection(db, 'jurnal'), orderBy('tanggal', 'desc')))
+        getDocs(query(collection(db, 'siswa'), limit(150))),
+        getDocs(query(collection(db, 'guru'), limit(150))),
+        getDocs(query(collection(db, 'mitra'), limit(150))),
+        getDocs(query(collection(db, 'absensi'), orderBy('tanggal', 'desc'), limit(150))),
+        getDocs(query(collection(db, 'jurnal'), orderBy('tanggal', 'desc'), limit(150)))
       ]);
       setSiswas(sSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       setGurus(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));

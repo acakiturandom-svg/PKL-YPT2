@@ -257,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         kelas: 'XII TKRO 1',
         jurusan: 'TKRO',
         username: username,
-        nomorHp: '081234567890',
+        noHp: '081234567890',
         mitraId: 'emergency_mitra',
         guruId: 'emergency_guru'
       };
@@ -273,11 +273,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return {
         id: 'emergency_' + username,
         namaMitra: `Bengkel (Offline: ${username})`,
-        namaKepalaBengkel: `Bpk. ${username}`,
+        kepalaMitra: `Bpk. ${username}`,
         kodeMitra: username,
         jurusanPkl: 'TKRO',
         alamat: 'Purbalingga (Offline Cache)',
-        nomorHp: '081234567890',
+        noHp: '081234567890',
         username: username
       };
     }

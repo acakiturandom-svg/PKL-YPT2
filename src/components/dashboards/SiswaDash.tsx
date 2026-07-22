@@ -60,7 +60,12 @@ export default function SiswaDash({ activeTab }: { activeTab: string }) {
 
     const resolveMatchingMitra = async () => {
       try {
-        const mSnap = await getDocs(collection(db, 'mitra'));
+        // Query exact match first to minimize reads
+        let mSnap = await getDocs(query(collection(db, 'mitra'), where('namaMitra', '==', siswa.namaBengkel), limit(5)));
+        if (mSnap.empty) {
+          // Fallback to limited list if exact not found
+          mSnap = await getDocs(query(collection(db, 'mitra'), limit(20)));
+        }
         const mList = mSnap.docs.map(d => ({ id: d.id, ...d.data() } as Mitra));
         
         const sNama = (siswa.namaBengkel || '').trim();
@@ -129,8 +134,8 @@ export default function SiswaDash({ activeTab }: { activeTab: string }) {
         const aSnap = await getDocs(aQ);
         if (!aSnap.empty) setLastAbsen({ id: aSnap.docs[0].id, ...aSnap.docs[0].data() } as Absensi);
 
-        // All Absen for Progress calculation
-        const allAQ = query(collection(db, 'absensi'), where('siswaId', '==', siswa.id));
+        // All Absen for Progress calculation (limit to 100 entries to save read quota)
+        const allAQ = query(collection(db, 'absensi'), where('siswaId', '==', siswa.id), limit(100));
         const allASnap = await getDocs(allAQ);
         setAllAbsensi(allASnap.docs.map(d => ({ id: d.id, ...d.data() } as Absensi)));
       } catch (e) {
@@ -1181,8 +1186,11 @@ function PengaturanSection({ siswa, onUpdate }: { siswa: any, onUpdate: () => vo
             setMitra({ id: mDoc.id, ...mDoc.data() });
           }
         }
-        const gSnap = await getDocs(collection(db, 'guru'));
-        setGurus(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // Only load the gurus list if editing is active to avoid wasted Reads
+        if (isEditing) {
+          const gSnap = await getDocs(query(collection(db, 'guru'), limit(50)));
+          setGurus(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }
       } catch (error) {
         console.error("Error in fetchMasters:", error);
       } finally {
@@ -1190,7 +1198,7 @@ function PengaturanSection({ siswa, onUpdate }: { siswa: any, onUpdate: () => vo
       }
     }
     fetchMasters();
-  }, [siswa.mitraId]);
+  }, [siswa.mitraId, isEditing]);
 
   const handleStartEdit = () => {
     setIsEditing(true);
