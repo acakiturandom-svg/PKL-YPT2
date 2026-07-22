@@ -125,3 +125,20 @@ export function extractCoordinates(input: string): { lat: number; lng: number } 
   return null;
 }
 
+export function isAppLocked(): boolean {
+  const now = new Date();
+  const hours = now.getHours();
+  return hours >= 18 || hours < 6;
+}
+
+export function getNextOpenTime(): Date {
+  const now = new Date();
+  const openTime = new Date(now);
+  openTime.setHours(6, 0, 0, 0);
+  if (now.getHours() >= 18) {
+    openTime.setDate(openTime.getDate() + 1);
+  }
+  return openTime;
+}
+
+

@@ -3,8 +3,9 @@ import React, { useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { UserRole } from '../types';
 import { Shield, User, UserCheck, Building2, Loader2, AlertCircle } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, isAppLocked } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import LockOverlay from './LockOverlay';
 
 export default function Login() {
   const [activeRole, setActiveRole] = useState<UserRole>('siswa');
@@ -12,6 +13,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isBypassed, setIsBypassed] = useState(false);
   const { loginAdmin, loginOthers } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -21,6 +23,12 @@ export default function Login() {
 
     try {
       const trimmedUsername = username.trim();
+
+      // Lockout verification at login submission level
+      if (isAppLocked() && (activeRole === 'siswa' || activeRole === 'mitra')) {
+        throw new Error('Maaf, login untuk Siswa dan Mitra PKL dikunci antara jam 18.00 sore s/d 06.00 pagi.');
+      }
+
       if (activeRole === 'admin') {
         await loginAdmin(trimmedUsername, password);
       } else {
@@ -39,6 +47,17 @@ export default function Login() {
     { id: 'mitra', label: 'MITRA', icon: Building2 },
     { id: 'admin', label: 'ADMIN', icon: Shield },
   ];
+
+  const isLocked = isAppLocked();
+
+  if (isLocked && !isBypassed) {
+    return (
+      <LockOverlay 
+        showBypassButton={true}
+        onBypass={() => setIsBypassed(true)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">

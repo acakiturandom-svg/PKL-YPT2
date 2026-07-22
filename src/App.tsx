@@ -8,10 +8,12 @@ import AdminDash from './components/dashboards/AdminDash';
 import SiswaDash from './components/dashboards/SiswaDash';
 import GuruDash from './components/dashboards/GuruDash';
 import MitraDash from './components/dashboards/MitraDash';
+import LockOverlay from './components/LockOverlay';
+import { isAppLocked } from './lib/utils';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
-  const { role, isLoading } = useAuth();
+  const { role, isLoading, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('beranda');
   const [showMonitor, setShowMonitor] = useState(window.location.hash === '#monitor');
 
@@ -48,6 +50,17 @@ function AppContent() {
 
   if (!role) {
     return <Login />;
+  }
+
+  // Active session lock for Siswa & Mitra during off-hours (18:00 - 06:00)
+  if ((role === 'siswa' || role === 'mitra') && isAppLocked()) {
+    return (
+      <LockOverlay 
+        showLogoutButton={true}
+        onLogout={logout}
+        roleContext={role === 'siswa' ? 'Siswa PKL' : 'Mitra Industri'}
+      />
+    );
   }
 
   return (
