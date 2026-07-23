@@ -107,17 +107,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginAdmin = async (email: string, pass: string) => {
     setState(s => ({ ...s, isLoading: true }));
     clearQueryCache();
+    // Remove stale offline flags
+    localStorage.removeItem('sipkl_quota_active');
+    setQuotaExceeded(false);
+
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (error: any) {
-      const isQuotaActive = localStorage.getItem('sipkl_quota_active') === 'true' || isQuotaExceeded;
-      const isNetworkOrQuota = error?.code === 'resource-exhausted' || 
-                               error?.message?.toLowerCase().includes('quota') || 
-                               error?.message?.toLowerCase().includes('network') ||
-                               error?.message?.toLowerCase().includes('limit exceeded');
+      const isQuotaError = error?.code === 'resource-exhausted' || 
+                           error?.message?.toLowerCase().includes('quota') || 
+                           error?.message?.toLowerCase().includes('limit exceeded');
       
-      if (isQuotaActive || isNetworkOrQuota) {
-        console.warn("Emergency bypass for Admin login triggered.");
+      if (isQuotaError) {
+        console.warn("Emergency bypass for Admin login triggered due to active Firestore quota error.");
+        setQuotaExceeded(true);
         const session = { 
           user: { uid: 'offline_admin_uid', email }, 
           role: 'admin' as UserRole, 

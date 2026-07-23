@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { format } from 'date-fns';
-import { subscribeToQuotaStatus } from '../lib/firebase';
+import { subscribeToQuotaStatus, clearQueryCache, setQuotaExceeded as updateQuotaExceeded } from '../lib/firebase';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -151,8 +151,13 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
               </span>
             </div>
             <button 
-              onClick={() => window.location.reload()} 
-              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors"
+              onClick={() => {
+                localStorage.removeItem('sipkl_quota_active');
+                updateQuotaExceeded(false);
+                clearQueryCache();
+                window.location.reload();
+              }} 
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors cursor-pointer"
             >
               Cek Ulang Database
             </button>
