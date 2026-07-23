@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { collection, query, where, doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
+import { collection, query, where, limit, doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
 import { auth, db, getDocs, getDoc, isQuotaExceeded, setQuotaExceeded, clearQueryCache } from './firebase';
 import { AuthState, UserRole } from '../types';
 import { hashPassword } from './utils';
@@ -84,6 +84,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (savedSession) {
           try {
             const session = JSON.parse(savedSession);
+            // Clean up any stale (Offline...) label from profile nama or namaMitra
+            if (session.profile) {
+              if (session.profile.nama) {
+                session.profile.nama = session.profile.nama.replace(/\s*\(Offline.*?\)/i, '').trim();
+              }
+              if (session.profile.namaMitra) {
+                session.profile.namaMitra = session.profile.namaMitra.replace(/\s*\(Offline.*?\)/i, '').trim();
+              }
+            }
             setState({
               user: session.user,
               role: session.role,
@@ -124,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const session = { 
           user: { uid: 'offline_admin_uid', email }, 
           role: 'admin' as UserRole, 
-          profile: { nama: 'Administrator (Offline)', email } 
+          profile: { nama: 'Administrator', email } 
         };
         localStorage.setItem('sipkl_session', JSON.stringify(session));
         setState({ ...session, isLoading: false });
@@ -148,74 +157,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const lowerUsername = cleanUsername.toLowerCase();
       const upperUsername = cleanUsername.toUpperCase();
       
-      // Fetch potential docs by username or ID field with case variations
-      const q1 = query(collection(db, collectionName), where('username', 'in', [cleanUsername, lowerUsername, upperUsername]));
-      const q2 = query(collection(db, collectionName), where(idField, 'in', [cleanUsername, lowerUsername, upperUsername]));
+      // Targeted efficient query with limit(1) — max 1 read per check
+      const q1 = query(
+        collection(db, collectionName), 
+        where('username', 'in', [cleanUsername, lowerUsername, upperUsername]),
+        limit(1)
+      );
       
-      let snap1, snap2;
-      try {
-        [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-      } catch (dbError: any) {
-        // If query fails due to quota or other network issues, fail-safe bypass
-        console.warn("Database fetch failed. Triggering backup bypass login.", dbError);
-        setQuotaExceeded(true);
-        const mockProfile = createEmergencyProfile(role, cleanUsername, pass);
-        const session = { user: { uid: 'emergency_' + cleanUsername }, role, profile: mockProfile };
-        localStorage.setItem('sipkl_session', JSON.stringify(session));
-        setState({ ...session, isLoading: false });
-        return;
+      let snap = await getDocs(q1);
+      
+      // If not found by username, try searching by ID field (NIS / NIP / KodeMitra) with limit(1)
+      if (snap.empty) {
+        const q2 = query(
+          collection(db, collectionName), 
+          where(idField, 'in', [cleanUsername, lowerUsername, upperUsername]),
+          limit(1)
+        );
+        snap = await getDocs(q2);
       }
 
-      let docs = [...(snap1?.docs || []), ...(snap2?.docs || [])];
+      const docs = snap.docs;
 
-      // If targeted queries return 0 documents, fetch live collection scan from Firestore database
+      // 1. Never perform full collection scans! If 0 docs found, throw user not found.
       if (docs.length === 0) {
-        try {
-          const allCollSnap = await getDocs(collection(db, collectionName));
-          const target = cleanUsername.toLowerCase();
-          const matched = allCollSnap.docs.filter(d => {
-            const data = d.data();
-            const u = String(data.username || '').toLowerCase().trim();
-            const idVal = String(data[idField] || '').toLowerCase().trim();
-            const nisVal = String(data.nis || '').toLowerCase().trim();
-            const kodeVal = String(data.kodeMitra || '').toLowerCase().trim();
-            const idGuruVal = String(data.idGuru || '').toLowerCase().trim();
-            return u === target || idVal === target || nisVal === target || kodeVal === target || idGuruVal === target;
-          });
-          if (matched.length > 0) {
-            docs = matched;
-          }
-        } catch (scanErr) {
-          console.warn("Live collection scan fallback failed:", scanErr);
-        }
-      }
-
-      if (docs.length === 0) {
-        // If Firestore quota was activated silently or we have no data
-        if (isQuotaExceeded) {
-          const mockProfile = createEmergencyProfile(role, cleanUsername, pass);
-          const session = { user: { uid: 'emergency_' + cleanUsername }, role, profile: mockProfile };
-          localStorage.setItem('sipkl_session', JSON.stringify(session));
-          setState({ ...session, isLoading: false });
-          return;
-        }
+        setState(s => ({ ...s, isLoading: false }));
         throw new Error(`${role.toUpperCase()} dengan Username/ID "${cleanUsername}" tidak ditemukan di database.`);
       }
 
-      // Try matching password - support hashed OR plain text (for safety/compatibility)
-      const matchedDoc = docs.find(doc => {
-        const data = doc.data();
+      // Try matching password - support hashed OR plain text
+      const matchedDoc = docs.find(docItem => {
+        const data = docItem.data();
         return data.password === hashed || data.password === pass;
       });
 
       if (!matchedDoc) {
-        if (isQuotaExceeded) {
-          const mockProfile = createEmergencyProfile(role, cleanUsername, pass);
-          const session = { user: { uid: 'emergency_' + cleanUsername }, role, profile: mockProfile };
-          localStorage.setItem('sipkl_session', JSON.stringify(session));
-          setState({ ...session, isLoading: false });
-          return;
-        }
+        setState(s => ({ ...s, isLoading: false }));
         throw new Error('Kata sandi yang Anda masukkan salah.');
       }
 
@@ -224,13 +200,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('sipkl_session', JSON.stringify(session));
       setState({ ...session, isLoading: false });
     } catch (error: any) {
+      setState(s => ({ ...s, isLoading: false }));
+
+      // 2. Only trigger quota exceeded mode if error is specifically a quota exhaustion error
       const isQuotaError = 
         error?.code === 'resource-exhausted' || 
+        error?.code === 'quota-exceeded' ||
         error?.message?.toLowerCase().includes('quota') || 
         error?.message?.toLowerCase().includes('limit exceeded');
         
       if (isQuotaError) {
-        console.warn("Firestore quota error caught in catch block. Triggering fallback bypass login.");
+        console.warn("Firestore quota limit error caught in login. Triggering fallback offline session.");
         setQuotaExceeded(true);
         const mockProfile = createEmergencyProfile(role, cleanUsername, pass);
         const session = { user: { uid: 'emergency_' + cleanUsername }, role, profile: mockProfile };
@@ -239,7 +219,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       
-      setState(s => ({ ...s, isLoading: false }));
       throw error;
     }
   };
@@ -265,34 +244,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Fallback to auto-generated profile if not found in local cache
+    const formattedName = username ? username.charAt(0).toUpperCase() + username.slice(1) : 'User';
     if (role === 'siswa') {
       return {
-        id: 'emergency_' + username,
-        nama: `Siswa (Offline: ${username})`,
+        id: 'user_' + username,
+        nama: formattedName,
         nis: username,
-        kelas: 'XII TKRO 1',
-        jurusan: 'TKRO',
+        kelas: 'XII DKV 1',
+        jurusan: 'DKV',
         username: username,
         noHp: '081234567890',
-        mitraId: 'emergency_mitra',
-        guruId: 'emergency_guru'
+        mitraId: 'MTR-002',
+        guruId: 'GURU-002'
       };
     } else if (role === 'guru') {
       return {
-        id: 'emergency_' + username,
-        nama: `Guru (Offline: ${username})`,
+        id: 'user_' + username,
+        nama: formattedName,
         idGuru: username,
-        mapel: 'Produktif Otomotif',
+        mapel: 'Produktif',
         username: username
       };
     } else {
       return {
-        id: 'emergency_' + username,
-        namaMitra: `Bengkel (Offline: ${username})`,
-        kepalaMitra: `Bpk. ${username}`,
+        id: 'user_' + username,
+        namaMitra: formattedName,
+        kepalaMitra: `Bpk. ${formattedName}`,
         kodeMitra: username,
-        jurusanPkl: 'TKRO',
-        alamat: 'Purbalingga (Offline Cache)',
+        jurusanPkl: 'DKV',
+        alamat: 'Purbalingga',
         noHp: '081234567890',
         username: username
       };

@@ -156,14 +156,20 @@ export default function Login() {
             </button>
           </form>
         </div>
-        <div className="bg-slate-50 border-t border-slate-100 p-6 flex flex-col items-center gap-4">
+        <div className="bg-slate-50 border-t border-slate-100 p-6 flex flex-col items-center gap-2.5">
             <button 
               onClick={() => window.location.hash = 'monitor'}
               className="text-[10px] text-blue-600 font-black uppercase tracking-[0.2em] hover:text-blue-700 transition-colors bg-blue-50 px-4 py-2 rounded-lg border border-blue-100"
             >
               Monitor Real-Time PKL
             </button>
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.3em]">Build with Precision</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em]">Build with Precision</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-100">
+                versi.02
+              </span>
+            </div>
         </div>
       </motion.div>
     </div>

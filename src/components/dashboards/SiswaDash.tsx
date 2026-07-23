@@ -1202,7 +1202,7 @@ function PengaturanSection({ siswa, onUpdate }: { siswa: any, onUpdate: () => vo
         }
         // Only load the gurus list if editing is active to avoid wasted Reads
         if (isEditing) {
-          const gSnap = await getDocs(query(collection(db, 'guru'), limit(50)));
+          const gSnap = await getDocs(collection(db, 'guru'));
           setGurus(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         }
       } catch (error) {

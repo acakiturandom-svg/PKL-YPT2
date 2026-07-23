@@ -25,11 +25,12 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with local persistent caching enabled
+const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
   })
-}, firebaseConfig.firestoreDatabaseId);
+}, databaseId);
 
 export const auth = getAuth(app);
 
@@ -317,26 +318,62 @@ export function onSnapshot(
   errorOrNext?: any,
   complete?: any
 ): () => void {
-  try {
-    return fireonSnapshot(ref, nextOrObserver, errorOrNext, complete);
-  } catch (error: any) {
+  const handleQuotaError = (err: any) => {
     const isQuotaError = 
-      error?.code === 'resource-exhausted' || 
-      error?.message?.toLowerCase().includes('quota') || 
-      error?.message?.toLowerCase().includes('limit exceeded');
+      err?.code === 'resource-exhausted' || 
+      err?.message?.toLowerCase().includes('quota') || 
+      err?.message?.toLowerCase().includes('limit exceeded');
 
     if (isQuotaError) {
-      console.warn("onSnapshot caught quota error during initialization.");
+      console.warn("onSnapshot listener caught quota limit error.");
       setQuotaExceeded(true);
-      // Try calling nextOrObserver if possible with cache doc
       if (typeof nextOrObserver === 'function') {
         getDoc(ref).then(snap => nextOrObserver(snap)).catch(() => {});
       } else if (nextOrObserver && typeof nextOrObserver.next === 'function') {
         getDoc(ref).then(snap => nextOrObserver.next(snap)).catch(() => {});
       }
-      return () => {};
+    } else {
+      console.warn("onSnapshot listener error:", err?.message || err);
     }
-    throw error;
+  };
+
+  try {
+    if (typeof nextOrObserver === 'object' && nextOrObserver !== null) {
+      const originalNext = nextOrObserver.next;
+      const originalError = nextOrObserver.error;
+      const wrappedObserver = {
+        ...nextOrObserver,
+        next: (snap: any) => {
+          if (isQuotaExceeded) setQuotaExceeded(false);
+          if (originalNext) originalNext(snap);
+        },
+        error: (err: any) => {
+          handleQuotaError(err);
+          if (originalError) originalError(err);
+        }
+      };
+      return fireonSnapshot(ref, wrappedObserver);
+    } else {
+      const originalOnNext = nextOrObserver;
+      const originalOnError = errorOrNext;
+
+      const wrappedOnNext = (snap: any) => {
+        if (isQuotaExceeded) setQuotaExceeded(false);
+        if (originalOnNext) originalOnNext(snap);
+      };
+
+      const wrappedOnError = (err: any) => {
+        handleQuotaError(err);
+        if (typeof originalOnError === 'function') {
+          originalOnError(err);
+        }
+      };
+
+      return fireonSnapshot(ref, wrappedOnNext, wrappedOnError, complete);
+    }
+  } catch (syncError: any) {
+    handleQuotaError(syncError);
+    return () => {};
   }
 }
 

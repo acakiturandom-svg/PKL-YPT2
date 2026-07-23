@@ -61,11 +61,11 @@ export default function MonitoringDashboard() {
     async function fetchAllData() {
       try {
         const [sSnap, mSnap, gSnap, aSnap, jSnap] = await Promise.all([
-          getDocs(query(collection(db, 'siswa'), limit(200))),
-          getDocs(query(collection(db, 'mitra'), limit(200))),
-          getDocs(query(collection(db, 'guru'), limit(200))),
-          getDocs(query(collection(db, 'absensi'), limit(200))),
-          getDocs(query(collection(db, 'jurnal'), limit(200)))
+          getDocs(collection(db, 'siswa')),
+          getDocs(collection(db, 'mitra')),
+          getDocs(collection(db, 'guru')),
+          getDocs(collection(db, 'absensi')),
+          getDocs(collection(db, 'jurnal'))
         ]);
 
         setData({
