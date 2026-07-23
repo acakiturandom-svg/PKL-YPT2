@@ -554,7 +554,7 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
   const [keterangan, setKeterangan] = useState('');
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  // Sesi Absensi berdasarkan Jurusan (TKJ, TSM, TAV = Pagi; TKR, DKV = Sore)
+  // Sesi Absensi berdasarkan Jurusan (TKJ, TSM, TAV = Pagi; TKR = Sore; DKV = 07:00 - 18:00)
   const getSessionStatus = () => {
     const now = new Date();
     const currentHour = now.getHours();
@@ -570,8 +570,22 @@ function AbsensiSection({ siswa, mitra, lastAbsen, setLastAbsen }: any) {
     const isAfternoonTime = currentTimeVal >= afternoonStart && currentTimeVal <= afternoonEnd;
 
     const jur = (siswa.jurusan || '').trim().toUpperCase();
+    const isDkvDept = jur === 'DKV' || jur.includes('DKV');
     const isMorningDept = ['TKJ', 'TSM', 'TAV'].includes(jur);
-    const isAfternoonDept = ['TKR', 'TKRO', 'DKV'].includes(jur);
+    const isAfternoonDept = ['TKR', 'TKRO'].includes(jur);
+
+    if (isDkvDept) {
+      const dkvStart = 7 * 60;   // 07:00
+      const dkvEnd = 18 * 60;    // 18:00
+      const isDkvTime = currentTimeVal >= dkvStart && currentTimeVal <= dkvEnd;
+      return {
+        allowed: isDkvTime,
+        session: 'Khusus DKV (07:00 - 18:00)',
+        currentTimeStr: `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`,
+        msg: `Jurusan Anda (${jur}) dijadwalkan absensi pada Sesi Khusus DKV (07:00 - 18:00).`,
+        expectedSlot: '07:00 - 18:00'
+      };
+    }
 
     if (isMorningDept) {
       return {

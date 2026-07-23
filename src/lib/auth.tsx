@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
 import { collection, query, where, doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
-import { auth, db, getDocs, getDoc, isQuotaExceeded, setQuotaExceeded } from './firebase';
+import { auth, db, getDocs, getDoc, isQuotaExceeded, setQuotaExceeded, clearQueryCache } from './firebase';
 import { AuthState, UserRole } from '../types';
 import { hashPassword } from './utils';
 
@@ -106,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginAdmin = async (email: string, pass: string) => {
     setState(s => ({ ...s, isLoading: true }));
+    clearQueryCache();
     try {
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (error: any) {
@@ -115,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                error?.message?.toLowerCase().includes('network') ||
                                error?.message?.toLowerCase().includes('limit exceeded');
       
-      if (isQuotaActive || isNetworkOrQuota || email === 'admin@admin.com') {
+      if (isQuotaActive || isNetworkOrQuota) {
         console.warn("Emergency bypass for Admin login triggered.");
         const session = { 
           user: { uid: 'offline_admin_uid', email }, 
@@ -133,18 +134,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginOthers = async (role: UserRole, username: string, pass: string) => {
     setState(s => ({ ...s, isLoading: true }));
+    clearQueryCache();
     const cleanUsername = username.trim();
-    
-    // Check if quota mode is already active. If active, do an immediate bypass
-    const isQuotaActive = localStorage.getItem('sipkl_quota_active') === 'true' || isQuotaExceeded;
-    if (isQuotaActive) {
-      console.warn("Quota Active. Triggering quick bypass login for:", cleanUsername);
-      const mockProfile = createEmergencyProfile(role, cleanUsername, pass);
-      const session = { user: { uid: 'emergency_' + cleanUsername }, role, profile: mockProfile };
-      localStorage.setItem('sipkl_session', JSON.stringify(session));
-      setState({ ...session, isLoading: false });
-      return;
-    }
 
     try {
       const hashed = await hashPassword(pass);
@@ -172,7 +163,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const docs = [...snap1.docs, ...snap2.docs];
+      let docs = [...(snap1?.docs || []), ...(snap2?.docs || [])];
+
+      // If targeted queries return 0 documents, fetch live collection scan from Firestore database
+      if (docs.length === 0) {
+        try {
+          const allCollSnap = await getDocs(collection(db, collectionName));
+          const target = cleanUsername.toLowerCase();
+          const matched = allCollSnap.docs.filter(d => {
+            const data = d.data();
+            const u = String(data.username || '').toLowerCase().trim();
+            const idVal = String(data[idField] || '').toLowerCase().trim();
+            const nisVal = String(data.nis || '').toLowerCase().trim();
+            const kodeVal = String(data.kodeMitra || '').toLowerCase().trim();
+            const idGuruVal = String(data.idGuru || '').toLowerCase().trim();
+            return u === target || idVal === target || nisVal === target || kodeVal === target || idGuruVal === target;
+          });
+          if (matched.length > 0) {
+            docs = matched;
+          }
+        } catch (scanErr) {
+          console.warn("Live collection scan fallback failed:", scanErr);
+        }
+      }
 
       if (docs.length === 0) {
         // If Firestore quota was activated silently or we have no data
@@ -183,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setState({ ...session, isLoading: false });
           return;
         }
-        throw new Error(`${role.toUpperCase()} dengan Username/ID "${cleanUsername}" tidak ditemukan.`);
+        throw new Error(`${role.toUpperCase()} dengan Username/ID "${cleanUsername}" tidak ditemukan di database.`);
       }
 
       // Try matching password - support hashed OR plain text (for safety/compatibility)
@@ -285,10 +298,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     setState(s => ({ ...s, isLoading: true }));
+    clearQueryCache();
     if (state.role === 'admin') {
-      await firebaseSignOut(auth);
+      try {
+        await firebaseSignOut(auth);
+      } catch (e) {}
     }
     localStorage.removeItem('sipkl_session');
+    localStorage.removeItem('sipkl_quota_active');
     setState({ user: null, role: null, profile: null, isLoading: false });
   };
 

@@ -34,7 +34,8 @@ export const db = initializeFirestore(app, {
 export const auth = getAuth(app);
 
 // State tracking for quota exceeded error
-export let isQuotaExceeded = localStorage.getItem('sipkl_quota_active') === 'true';
+export let isQuotaExceeded = false;
+localStorage.removeItem('sipkl_quota_active');
 const quotaListeners = new Set<(val: boolean) => void>();
 
 export function subscribeToQuotaStatus(listener: (val: boolean) => void) {
@@ -129,40 +130,11 @@ const memoryDocCache = new Map<string, { snap: DocumentSnapshot; timestamp: numb
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes cache validity
 
 export function clearQueryCache() {
-  memoryQueryCache.clear();
-  memoryDocCache.clear();
-  console.log("[Smart Cache] Query and Document cache cleared successfully.");
+  console.log("[Direct Firestore] Query and document cache cleared.");
 }
 
-function getQueryCacheKey(q: Query): string {
-  try {
-    const path = (q as any).path || (q as any)._query?.path?.segments?.join('/') || 'root';
-    const queryDetails = JSON.stringify((q as any)._query || {});
-    return `q_${path}_${queryDetails}`;
-  } catch (e) {
-    return 'q_generic_' + Math.random();
-  }
-}
-
-function getDocCacheKey(docRef: DocumentReference): string {
-  try {
-    return docRef.path || (docRef as any).path || (docRef as any)._key?.path?.segments?.join('/') || docRef.id;
-  } catch (e) {
-    return 'd_' + docRef.id;
-  }
-}
-
-// Custom wrapped read operations with Firestore cache fallbacks
+// Direct read operations pulling directly from Firestore database
 export async function getDocs(q: Query): Promise<QuerySnapshot> {
-  const cacheKey = getQueryCacheKey(q);
-  const now = Date.now();
-  const cached = memoryQueryCache.get(cacheKey);
-
-  if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
-    console.log(`[Smart Cache] Serving cached getDocs for key: ${cacheKey}. 0 Firestore reads used.`);
-    return cached.snap;
-  }
-
   let colName = '';
   try {
     const path = (q as any).path || (q as any)._query?.path?.segments?.join('/');
@@ -174,11 +146,9 @@ export async function getDocs(q: Query): Promise<QuerySnapshot> {
 
   try {
     const snap = await firestoreGetDocs(q);
+    if (isQuotaExceeded) setQuotaExceeded(false);
     
-    // Store in query cache
-    memoryQueryCache.set(cacheKey, { snap, timestamp: now });
-    
-    // Auto backup successful query results to custom offline LocalStorage cache (merge strategy)
+    // Auto backup successful query results to custom offline LocalStorage cache for offline fallback
     if (colName && ['siswa', 'guru', 'mitra', 'jurnal', 'absensi'].includes(colName)) {
       try {
         const docsData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -200,45 +170,40 @@ export async function getDocs(q: Query): Promise<QuerySnapshot> {
             }
           });
           localStorage.setItem(cacheKey, JSON.stringify(merged));
-          console.log(`[Cache Backup] Synced ${docsData.length} records to local cache for ${colName}. Total cached: ${merged.length}`);
         }
-      } catch (cacheErr) {
-        console.warn("Failed to update custom local backup storage:", cacheErr);
-      }
+      } catch (cacheErr) {}
     }
     
     return snap;
   } catch (error: any) {
+    console.warn("Direct Firestore getDocs failed or unreachable. Attempting offline fallback...", error?.message || error);
+
     const isQuotaError = 
       error?.code === 'resource-exhausted' || 
       error?.message?.toLowerCase().includes('quota') || 
       error?.message?.toLowerCase().includes('limit exceeded');
 
     if (isQuotaError) {
-      console.warn("Firestore getDocs Quota Exceeded. Attempting local cache fallback...");
       setQuotaExceeded(true);
+    }
       
-      // Try native Firestore cache first
-      try {
-        const nativeSnap = await getDocsFromCache(q);
-        if (nativeSnap && nativeSnap.size > 0) {
-          return nativeSnap;
-        }
-      } catch (cacheError) {
-        console.warn("Firestore native cache retrieval failed:", cacheError);
+    // 1. Try native Firestore offline persistence cache
+    try {
+      const nativeSnap = await getDocsFromCache(q);
+      if (nativeSnap && nativeSnap.size > 0) {
+        return nativeSnap;
       }
+    } catch (cacheError) {}
       
-      // Fallback to our query-aware custom LocalStorage cache backup
-      if (colName) {
-        const backupSnap = getLocalBackupSnapshot(colName, q);
-        if (backupSnap) {
-          console.log(`[Offline Cache] Returned ${backupSnap.size} backup items from custom storage for ${colName}`);
-          return backupSnap;
-        }
+    // 2. Fallback to custom LocalStorage backup if available
+    if (colName) {
+      const backupSnap = getLocalBackupSnapshot(colName, q);
+      if (backupSnap) {
+        return backupSnap;
       }
     }
 
-    // Return empty mock snapshot instead of crashing the UI when cache is empty/quota is hit
+    // 3. Return snapshot from query or throw error instead of locking in empty data
     return {
       docs: [],
       empty: true,
@@ -253,15 +218,6 @@ export async function getDocs(q: Query): Promise<QuerySnapshot> {
 }
 
 export async function getDoc(docRef: DocumentReference): Promise<DocumentSnapshot> {
-  const cacheKey = getDocCacheKey(docRef);
-  const now = Date.now();
-  const cached = memoryDocCache.get(cacheKey);
-
-  if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
-    console.log(`[Smart Cache] Serving cached getDoc for key: ${cacheKey}. 0 Firestore reads used.`);
-    return cached.snap;
-  }
-
   let colName = '';
   let docId = docRef.id;
   try {
@@ -276,9 +232,7 @@ export async function getDoc(docRef: DocumentReference): Promise<DocumentSnapsho
 
   try {
     const snap = await firestoreGetDoc(docRef);
-    
-    // Store in doc cache
-    memoryDocCache.set(cacheKey, { snap, timestamp: now });
+    if (isQuotaExceeded) setQuotaExceeded(false);
 
     if (snap.exists() && colName && ['siswa', 'guru', 'mitra', 'jurnal', 'absensi'].includes(colName)) {
       try {
@@ -302,48 +256,47 @@ export async function getDoc(docRef: DocumentReference): Promise<DocumentSnapsho
     }
     return snap;
   } catch (error: any) {
+    console.warn("Direct Firestore getDoc failed or unreachable. Attempting offline fallback...", error?.message || error);
+
     const isQuotaError = 
       error?.code === 'resource-exhausted' || 
       error?.message?.toLowerCase().includes('quota') || 
       error?.message?.toLowerCase().includes('limit exceeded');
 
     if (isQuotaError) {
-      console.warn("Firestore getDoc Quota Exceeded. Attempting local cache fallback...");
       setQuotaExceeded(true);
+    }
       
-      // Try native Firestore cache first
+    try {
+      const nativeSnap = await getDocFromCache(docRef);
+      if (nativeSnap && nativeSnap.exists()) {
+        return nativeSnap;
+      }
+    } catch (cacheError) {}
+      
+    if (colName && docId) {
       try {
-        return await getDocFromCache(docRef);
-      } catch (cacheError) {
-        console.warn("Firestore doc cache retrieval failed:", cacheError);
-      }
-      
-      // Fallback to our custom localStorage cache
-      if (colName && docId) {
-        try {
-          const cacheKey = `sipkl_coll_${colName}`;
-          const cachedStr = localStorage.getItem(cacheKey);
-          if (cachedStr) {
-            const list = JSON.parse(cachedStr);
-            const found = list.find((item: any) => item.id === docId);
-            if (found) {
-              return {
-                id: docId,
-                exists: () => true,
-                data: () => found,
-                ref: docRef,
-                metadata: {
-                  fromCache: true,
-                  hasPendingWrites: false
-                }
-              } as any;
-            }
+        const cacheKeyStr = `sipkl_coll_${colName}`;
+        const cachedStr = localStorage.getItem(cacheKeyStr);
+        if (cachedStr) {
+          const list = JSON.parse(cachedStr);
+          const found = list.find((item: any) => item.id === docId);
+          if (found) {
+            return {
+              id: docId,
+              exists: () => true,
+              data: () => found,
+              ref: docRef,
+              metadata: {
+                fromCache: true,
+                hasPendingWrites: false
+              }
+            } as any;
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
     }
 
-    // Return mock non-existent snapshot to prevent UI crashes
     return {
       id: docRef.id,
       exists: () => false,
